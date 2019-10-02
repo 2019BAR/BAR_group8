@@ -196,12 +196,12 @@ tapply(A$Hispanic, A$MetroArea, mean, na.rm = TRUE) %>% sort %>% tail
 
 __§ 3.5__ Determine the number of metropolitan areas in the United States from which at least 20% of interviewees are Asian.
 ```{r}
-tapply(A$Race == "Asian", A$MetroArea.y, mean) %>% sort %>% tail
+tapply(A$Race == "Asian", A$MetroArea, mean) %>% sort %>% tail
 ```
 
 __§ 3.6__  Passing na.rm=TRUE to the tapply function, determine which metropolitan area has the smallest proportion of interviewees who have received no high school diploma.
 ```{r}
-tapply(A$Education == "No high school diploma", A$MetroArea.y, mean, na.rm = TRUE) %>% sort %>% head
+tapply(A$Education == "No high school diploma", A$MetroArea, mean, na.rm = TRUE) %>% sort %>% head
 ```
 
 
@@ -233,17 +233,17 @@ table(A$Country[A$MetroArea.y == "New York-Northern New Jersey-Long Island, NY-N
 
 __§ 4.4__ Which metropolitan area has the largest number (note -- not proportion) of interviewees with a country of birth in India? 
 ```{r}
-tapply(A$Country =='India', A$MetroArea.y, sum) %>% sort %>% tail
+tapply(A$Country =='India', A$MetroArea, sum) %>% sort %>% tail
 ``` 
 
 In Brazil?
 ```{r}
-tapply(A$Country =='Brazil', A$MetroArea.y, sum) %>% sort %>% tail
+tapply(A$Country =='Brazil', A$MetroArea, sum) %>% sort %>% tail
 ```
 
 In Somalia?
 ```{r}
-tapply(A$Country =='Somalia', A$MetroArea.y, sum) %>% sort %>% tail
+tapply(A$Country =='Somalia', A$MetroArea, sum) %>% sort %>% tail
 ```
 
 <br><br><br>
