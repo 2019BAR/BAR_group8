@@ -1,6 +1,6 @@
 ---
 title: "AS2-1: 數位偵探"
-author: "第 0 組"
+author: "第 8 組"
 date: "`r Sys.time()`"
 output: 
   html_document:
@@ -47,7 +47,7 @@ pacman::p_load(dplyr, d3heatmap)
 
 【1.1】How many rows of data (observations) are in this dataset?
 ```{r}
-A = read.csv("C:/Users/user/Desktop/R/data and code/unit02cd/other data/mvtWeek1.csv", stringsAsFactors=F)
+A = read.csv("C:/BAR_group8/unit02/data/mvtWeek1.csv", stringsAsFactors=F)
 nrow(A)
 ```
 

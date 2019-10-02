@@ -1,6 +1,6 @@
 ---
 title: "AS2-3: 美國的人口統計和就業資料"
-author: "第 0 組"
+author: "第 8 組"
 date: "`r Sys.time()`"
 output: 
   html_document:
@@ -48,9 +48,9 @@ pacman::p_load(dplyr)
 
 __§ 1.1__ How many interviewees are in the dataset?
 ```{r}
-A = read.csv('C:/Users/user/Desktop/R/data and code/unit02cd/other data/CPSData.csv')
-MetroAreaCode = read.csv('C:/Users/user/Desktop/R/data and code/unit02cd/other data/MetroAreaCodes.csv')
-CountryOfBirthcode = read.csv('C:/Users/user/Desktop/R/data and code/unit02cd/other data/CountryCodes.csv')
+A = read.csv('C:/BAR_group8/unit02/data/CPSData.csv')
+MetroAreaCode = read.csv('C:/BAR_group8/unit02/data/MetroAreaCodes.csv')
+CountryOfBirthcode = read.csv('C:/BAR_group8/unit02/data/CountryCodes.csv')
 nrow(A)
 ```
 
@@ -191,7 +191,7 @@ table(A$MetroArea.y) %>% sort %>% tail
 
 __§ 3.4__ Which metropolitan area has the highest proportion of interviewees of Hispanic ethnicity?
 ```{r}
-tapply(A$Hispanic, A$MetroArea.x, mean, na.rm = TRUE) %>% sort %>% tail
+tapply(A$Hispanic, A$MetroArea, mean, na.rm = TRUE) %>% sort %>% tail
 ```
 
 __§ 3.5__ Determine the number of metropolitan areas in the United States from which at least 20% of interviewees are Asian.
