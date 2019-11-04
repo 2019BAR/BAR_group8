@@ -1,0 +1,238 @@
+---
+title: 商務數據分析期中專案
+author: 第八組 Group_8
+date: "`r Sys.time()`"
+output: 
+  html_document:
+    highlight: pygments
+    theme: flatly
+    css: ../style.css
+---
+
+```{r results='hide', message=FALSE, warning=FALSE, echo=F}
+rm(list=ls(all=T))
+knitr::opts_chunk$set(comment = NA)
+knitr::opts_knit$set(global.par = TRUE)
+par(cex=0.8)
+options(scipen=20, digits=5, width=80)
+if(!require(googleVis)) install.packages("googleVis")
+if(!require(pacman)) install.packages("pacman")
+```
+<hr>
+
+```{r results='hide', message=FALSE, warning=FALSE}
+pacman::p_load(dplyr, ggplot2, readr, plotly, googleVis)
+```
+
+```{r}
+load("C:/BAR_group8/data/olist.rdata")
+load("C:/BAR_group8/data/Z.rdata")
+```
+<hr>
+
+### 資料處理
+Merge `TPC$product_category_name_english` into `P` as `P$category`
+```{r}
+P = left_join(P, TPC) %>% rename(category = product_category_name_english)
+```
+
+Merge `P$category into `I`
+```{r}
+I = left_join(I, P[,c(1,10)])
+```
+
+Summerise by `category`
+```{r}
+category = filter(I, !is.na(category)) %>% 
+  group_by(category) %>% summarise(
+    itemsSold = n(),
+    totalRev = sum(price),
+    avgPrice = mean(price),
+    noProduct = n_distinct(product_id),
+    noSeller = n_distinct(seller_id),
+    dummy = 2018
+  ) %>% arrange(desc(totalRev))
+```
+
+Top-20 categories
+```{r}
+top20 = category %>% top_n(20, totalRev)
+top20
+```
+##### 時間面板資料 Panel Data
+併入時間資料
+```{r}
+X = left_join(O[, c(1,4)], R[,2:3]) %>%     # pull score & timestamp into 'O'
+  rename(
+    time = order_purchase_timestamp, 
+    score = review_score) %>% 
+  mutate(                                   # cut timestamp into quarter    
+    quarter = as.Date(cut(time, "quarter"))
+    ) %>%  
+  right_join(I) %>%                         # merge score & quarter into 'I'
+  filter(category %in% top20$category) %>%  # pick out the top20 categories
+  group_by(category, quarter) %>% 
+  summarise(                            # summarise by category & quarter
+    itemsSold = n(),                     
+    totalRev = sum(price),
+    avgPrice = mean(price),
+    avgScore = mean(score),
+    noProduct = n_distinct(product_id),
+    noSeller = n_distinct(seller_id)
+  ) %>% 
+  arrange(category, quarter)            # order by category & quarter
+```
+
+##### 調整資料範圍、去除離群值
+```{r}
+X2 = X %>%  # adjustment before ploting
+  filter(quarter >= as.Date("2017-04-01")) %>% 
+  filter(!(category %in% c("computers", "office_furniture"))) %>% 
+  mutate(avgPrice = pmax(avgPrice, 3)) %>% as.data.frame
+```
+<br><hr>
+### 數據分析
+
+##### 預計分析流程：
+ 
+Step1：找出營收最高的四種產品類別 <br>
+Step2：四產品的宏觀綜合分析 <br>
+Step3：四產品的營銷趨勢分析 <br>
+Step4：四產品的個別分析 <br>
+Step5：總營銷建議 <br>
+
+##### 本組原先思考是否可以從營收佔比最多的幾家企業出發，去探討為何這幾家企業能夠有如此高的營收佔比，以及如何維持和使其成長，為平台帶來效益。
+
+```{r}
+# Z$pcgRev = 100 * Z$rev / sum(Z$rev)
+
+Z = Z %>% mutate(
+  pcgRev = 100 * Rev / sum(Rev),
+  cumPcg = cumsum(pcgRev)
+  ) %>% arrange(desc(pcgRev))
+```
+
+```{r fig.height=10}
+#各企業的總營收佔比分布圖
+barplot(Z$pcgRev[1:20], horiz=T)
+```
+<br>
+由上圖我們發現，各家企業的營收佔比其實差距不大，最多甚至還不到2%，也就是說沒有非常顯著的營收佔比優勢企業，因此我們預期對營收佔比最多的幾家企業進行分析對平台能帶來的效益有限，在考量之下我們思考了其他的分析角度。
+
+##### 改變分析角度：
+
+由category的資料當中我們發現一共有71種的商品類別，而總營收最多的前四個類別已超過整個平台總營收的三分之一了，本組認為可以由此切入點出發，進一步分析為何這四類產品營收如此高，和如何維持甚至使其穩定成長，站在賣方角度思考如何增進熱門類別產品的銷售，並提出策略建議來為平台帶來效益。
+
+```{r}
+#從數據中看出，平台上的產品配別總共有71項，由於我們要找出總營收佔整個平台前30%的產品類別，所以先取出銷售額前10高的產品類別
+str(category)
+```
+##### Step1：找出營收最高的四種產品類別；從銷售額前10名的商品種類取出總和營收佔整個平台前30%的產品類別
+```{r}
+top10 = category %>% top_n(10, totalRev)
+top10
+```
+
+```{r}
+# Z$pcgRev = 100 * Z$rev / sum(Z$rev)
+
+category = category %>% mutate(
+  pcgRev = 100 * totalRev / sum(totalRev),
+  cumPcg = cumsum(pcgRev)
+  ) %>% arrange(desc(pcgRev))
+```
+
+```{r}
+#各企業的總營收佔比分布圖
+barplot(category$cumPcg[1:10], horiz=F, xlab = "Top10Category", ylab = "Accumulation of percentage") 
+```
+
+```{r}
+#取出前4個類別的產品，其佔比總銷售額約1/3，故我們針對這4個類別各別分析
+round(sum(category$totalRev[1:4]) / sum(category$totalRev), 3)
+```
+##### Step2：四產品的宏觀綜合分析；按月營比較該類別產品當年度與去年度的異同(該類別熱賣期間)
+```{r}
+Monthly = left_join(O[, c(1,4)], I[,1:8]) %>%     # pull score & timestamp into 'O'
+  rename(
+    time = order_purchase_timestamp, 
+    ) %>% 
+  mutate(                                   # cut timestamp into quarter    
+    month = as.Date(cut(time, "month")),
+    ) %>%  
+  right_join(I) %>%                         # merge score & quarter into 'I'
+  filter(category %in% top20$category) %>%  # pick out the top20 categories
+  group_by(category, month) %>% 
+  summarise(                            # summarise by category & quarter
+    itemsSold = n(),                     
+    totalRev = sum(price),
+    avgPrice = mean(price),
+    noProduct = n_distinct(product_id),
+    noSeller = n_distinct(seller_id)
+  ) %>% 
+  arrange(category, month)
+Monthly
+```
+
+```{r}
+cat_health_beauty = Monthly %>% filter(category == "health_beauty")
+cat_watches_gifts = Monthly %>% filter(category == "watches_gifts")
+cat_bed_bath_table = Monthly %>% filter(category == "bed_bath_table")
+cat_sports_leisure = Monthly %>% filter(category == "sports_leisure")
+```
+
+```{r}
+plot(cat_health_beauty$month, cat_health_beauty$totalRev, type='b', col='red', xlab = 'Month', ylab = 'Total Revenue', xlim=as.Date(c('2017-01-01','2018-08-01')))
+lines(cat_watches_gifts$month, cat_watches_gifts$totalRev, type='b', col='black')
+lines(cat_bed_bath_table$month, cat_bed_bath_table$totalRev, type='b', col='green')
+lines(cat_sports_leisure$month, cat_sports_leisure$totalRev, type='b', col='blue')
+abline(v=as.Date("2017-11-01"),col='gray',lty=3)
+```
+
+##### Step3：四產品的營銷趨勢分析
+```{r}
+cx = c('health_beauty',"watches_gifts","bed_bath_table","sports_leisure")
+Monthly %>% 
+  mutate(
+    yr = format(month, "%Y"),
+    mm = as.integer(format(month, "%m"))
+  ) %>% 
+  filter(category %in% cx, yr >= 2017) %>%
+  ggplot(aes(x=mm, y=totalRev, col=yr)) +
+  geom_line(size=2) + 
+  facet_wrap(~category, nrow=2) 
+```
+
+```{r}
+adjust_Monthly = left_join(I[,1:8], R[,2:3]) %>%   
+  rename(
+    score = review_score) %>% 
+  right_join(I) %>%                         # merge score & quarter into 'I'
+  filter(category %in% top10$category) %>%  # pick out the top20 categories
+  group_by(category) %>% 
+  summarise(                            # summarise by category & quarter
+    itemsSold = n(),                     
+    totalRev = sum(price),
+    avgPrice = mean(price),
+    noProduct = n_distinct(product_id),
+    noSeller = n_distinct(seller_id),
+    avg_score = mean(score)
+  ) %>% 
+  arrange(desc(totalRev))
+top_4_Monthly = adjust_Monthly %>% filter(totalRev > 950000)
+top_4_Monthly
+```
+##### Step4：四產品的個別分析
+```{r}
+category_without_city = left_join(O[, c(1,2,4)], I[,1:8]) %>%
+  right_join(I)    
+
+category_with_city = left_join(category_without_city[,1:10], C[,1:5]) %>% right_join(category_without_city)
+
+category_with_city %>% filter(category == "health_beauty")
+category_with_city
+```
+##### Step5：總營銷建議
+```{r}
+save(Monthly,cat_bed_bath_table, cat_health_beauty, cat_sports_leisure, cat_watches_gifts, adjust_Monthly, category_with_city, category_without_city, top_4_Monthly, top10, category,file="1027.rdata")
+```
