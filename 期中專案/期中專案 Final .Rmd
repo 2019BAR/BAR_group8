@@ -1,0 +1,602 @@
+---
+title: 商務數據分析期中專案
+author: 第八組 Group_8
+date: "`r Sys.time()`"
+output: 
+  html_document:
+    highlight: pygments
+    theme: flatly
+    css: ../style.css
+---
+
+```{r results='hide', message=FALSE, warning=FALSE, echo=F}
+rm(list=ls(all=T))
+knitr::opts_chunk$set(comment = NA)
+knitr::opts_knit$set(global.par = TRUE)
+par(cex=0.8)
+options(scipen=20, digits=5, width=80)
+if(!require(googleVis)) install.packages("googleVis")
+if(!require(pacman)) install.packages("pacman")
+```
+<hr>
+
+```{r results='hide', message=FALSE, warning=FALSE}
+pacman::p_load(dplyr, ggplot2, readr, plotly, googleVis, grid)
+```
+
+```{r}
+load("C:/BAR_group8/data/olist.rdata")
+load("C:/BAR_group8/data/Z.rdata")
+```
+<hr>
+
+### 資料處理
+Merge `TPC$product_category_name_english` into `P` as `P$category`
+```{r}
+P = left_join(P, TPC) %>% rename(category = product_category_name_english)
+```
+
+Merge `P$category into `I`
+```{r}
+I = left_join(I, P[,c(1,10)])
+```
+Summerise by `category`
+```{r}
+category = filter(I, !is.na(category)) %>% 
+  group_by(category) %>% summarise(
+    itemsSold = n(),
+    totalRev = sum(price),
+    avgPrice = mean(price),
+    noProduct = n_distinct(product_id),
+    noSeller = n_distinct(seller_id),
+    dummy = 2018
+  ) %>% arrange(desc(totalRev))
+```
+<br><hr>
+### 數據分析
+
+##### 預計分析流程：
+ 
+Step1：找出營收最高的四種產品類別 <br>
+Step2：四產品的宏觀綜合分析 <br>
+Step3：四產品的營銷趨勢分析 <br>
+Step4：四產品的個別分析 <br>
+Step5：總營銷建議 <br>
+
+##### 本組原先思考是否可以從營收佔比最多的幾家企業出發，去探討為何這幾家企業能夠有如此高的營收佔比，以及如何維持和使其成長，為平台帶來效益。
+
+```{r}
+# Z$pcgRev = 100 * Z$rev / sum(Z$rev)
+
+Z = Z %>% mutate(
+  pcgRev = 100 * Rev / sum(Rev),
+  cumPcg = cumsum(pcgRev)
+  ) %>% arrange(desc(pcgRev))
+```
+
+```{r fig.height=10}
+#各企業的總營收佔比分布圖
+barplot(Z$pcgRev[1:20], horiz=T)
+```
+<br>
+由上圖我們發現，各家企業的營收佔比其實差距不大，最多甚至還不到2%，也就是說沒有非常顯著的營收佔比優勢企業，因此我們預期對營收佔比最多的幾家企業進行分析對平台能帶來的效益有限，在考量之下我們思考了其他的分析角度。
+
+##### 改變分析角度：
+
+由category的資料當中我們發現一共有71種的商品類別，而總營收最多的前四個類別已超過整個平台總營收的三分之一了，本組認為可以由此切入點出發，進一步分析為何這四類產品營收如此高，和如何維持甚至使其穩定成長，站在賣方角度思考如何增進熱門類別產品的銷售，並提出策略建議來為平台帶來效益。
+
+```{r}
+#從數據中看出，平台上的產品配別總共有71項，由於我們要找出總營收佔整個平台前30%的產品類別，所以先取出銷售額前10高的產品類別
+str(category)
+```
+##### Step1：找出營收最高的四種產品類別；從銷售額前10名的商品種類取出總和營收佔整個平台前30%的產品類別
+```{r}
+top10 = category %>% top_n(10, totalRev)
+```
+
+```{r}
+# Z$pcgRev = 100 * Z$rev / sum(Z$rev)
+
+category = category %>% mutate(
+  pcgRev = 100 * totalRev / sum(totalRev),
+  cumPcg = cumsum(pcgRev)
+  ) %>% arrange(desc(pcgRev))
+```
+
+```{r}
+#各企業的總營收佔比分布圖
+barplot(category$cumPcg[1:10], horiz=F, xlab = "Top10Category", ylab = "Accumulation of percentage") 
+```
+
+```{r}
+#取出前4個類別的產品，其佔比總銷售額約1/3，故我們針對這4個類別各別分析
+round(sum(category$totalRev[1:4]) / sum(category$totalRev), 3)
+```
+##### Step2：四產品的宏觀綜合分析；按月營比較該類別產品當年度與去年度的異同(該類別熱賣期間)
+```{r}
+Monthly = left_join(O[, c(1,4)], I[,1:8]) %>%    
+  rename(
+    time = order_purchase_timestamp, 
+    ) %>% 
+  mutate(                                       
+    month = as.Date(cut(time, "month")),
+    ) %>%  
+  right_join(I) %>%                         
+  filter(category %in% top10$category) %>%  
+  group_by(category, month) %>% 
+  summarise(                           
+    itemsSold = n(),                     
+    totalRev = sum(price),
+    avgPrice = mean(price),
+    noProduct = n_distinct(product_id),
+    noSeller = n_distinct(seller_id)
+  ) %>% 
+  arrange(category, month)
+```
+
+```{r}
+cat_health_beauty = Monthly %>% filter(category == "health_beauty")
+cat_watches_gifts = Monthly %>% filter(category == "watches_gifts")
+cat_bed_bath_table = Monthly %>% filter(category == "bed_bath_table")
+cat_sports_leisure = Monthly %>% filter(category == "sports_leisure")
+```
+
+```{r}
+plot(cat_health_beauty$month, cat_health_beauty$totalRev, type='b', col='red', xlab = 'Month', ylab = 'Total Revenue', xlim=as.Date(c('2017-01-01','2018-08-01')))
+lines(cat_watches_gifts$month, cat_watches_gifts$totalRev, type='b', col='black')
+lines(cat_bed_bath_table$month, cat_bed_bath_table$totalRev, type='b', col='green')
+lines(cat_sports_leisure$month, cat_sports_leisure$totalRev, type='b', col='blue')
+abline(v=as.Date("2017-11-01"),col='gray',lty=3)
+```
+
+##### Step3：四產品的營銷趨勢分析
+畫出四產品以年度做區別的月營收曲線圖
+```{r}
+cx = c('health_beauty',"watches_gifts","bed_bath_table","sports_leisure")
+Monthly %>% 
+  mutate(
+    yr = format(month, "%Y"),
+    mm = as.integer(format(month, "%m"))
+  ) %>% 
+  filter(category %in% cx, yr >= 2017) %>%
+  ggplot(aes(x=mm, y=totalRev, col=yr)) +
+  geom_line(size=2) + 
+  facet_wrap(~category, nrow=2) 
+```
+
+```{r}
+adjust_Monthly = left_join(I[,1:8], R[,2:3]) %>%   
+  rename(
+    score = review_score) %>% 
+  right_join(I) %>%                        
+  filter(category %in% top10$category) %>% 
+  group_by(category) %>% 
+  summarise(                        
+    itemsSold = n(),                     
+    totalRev = sum(price),
+    avgPrice = mean(price),
+    noProduct = n_distinct(product_id),
+    noSeller = n_distinct(seller_id),
+    avg_score = mean(score)
+  ) %>% 
+  arrange(desc(totalRev))
+top_4_Monthly = adjust_Monthly %>% filter(totalRev > 950000)
+```
+##### Step4：四產品的個別分析
+```{r}
+category_without_city = left_join(O[, c(1,2,4)], I[,1:8]) %>%
+  right_join(I)    
+
+category_with_city = left_join(category_without_city[,1:10], C[,1:5]) %>% right_join(category_without_city)
+```
+```{r}
+Monthly_freight_value = left_join(O[, c(1,4)], I[,1:8]) %>%     # pull score & timestamp into 'O'
+  rename(
+    time = order_purchase_timestamp, 
+    ) %>% 
+  mutate(                                       
+    month = as.Date(cut(time, "month")),
+    ) %>%  
+  right_join(I) %>%                         
+  filter(category %in% top10$category) %>%  
+  group_by(category, month) %>% 
+  summarise(                         
+    itemsSold = n(),                     
+    totalRev = sum(price),
+    avgPrice = mean(price),
+    noProduct = n_distinct(product_id),
+    noSeller = n_distinct(seller_id),
+    avgfreightvalue = mean(freight_value)
+  ) %>% 
+  arrange(category, month)
+```
+
+```{r}
+I_with_score = left_join(R[, c(2,3)], I[, c(1:8)]) 
+```
+
+```{r}
+Monthly_with_score = left_join(O[, c(1,4)], I_with_score[,1:9]) %>%     # pull score & timestamp into 'O'
+  rename(
+    time = order_purchase_timestamp, 
+    ) %>% 
+  mutate(                                     
+    month = as.Date(cut(time, "month")),
+    ) %>%  
+  right_join(I) %>%                         
+  filter(category %in% top10$category) %>%  
+  group_by(category, month) %>% 
+  summarise(                            
+    itemsSold = n(),                     
+    totalRev = sum(price),
+    avgPrice = mean(price),
+    noProduct = n_distinct(product_id),
+    noSeller = n_distinct(seller_id),
+    avgscore = mean(review_score)
+  ) %>% 
+  arrange(category, month)
+```
+##### 第四名、sports_leisure商品分析
+```{r}
+#算出bed_bath_table包裹的大小
+p3=P%>%filter(category=="bed_bath_table")%>%
+  summarise(mean(product_weight_g),mean(product_length_cm), mean(product_width_cm), mean(product_height_cm))%>%round()
+```
+
+```{r}
+csp=c('sports_leisure')
+#期間總營收趨勢圖
+msmoney=Monthly %>% 
+  mutate(
+    yr = format(month, "%Y"),
+    mm = as.integer(format(month, "%m"))
+  ) %>% 
+  filter(category %in% csp, yr >= 2017) %>%
+  ggplot(aes(x=mm, y=totalRev,col=yr)) +
+  labs(tital="休閒運動總營收趨勢圖")+
+  geom_line(size=1)
+#2018一月最高峰後開始下跌#三月回升四月下跌#六月回升七月下跌
+#1.現實層面是否發生甚麼事
+#2.按月分記包裹數量
+AMOUNTMs=Monthly%>%filter(category=="sports_leisure")
+msamount=AMOUNTMs %>% 
+  mutate(
+    yr = format(month, "%Y"),
+    mm = as.integer(format(month, "%m"))
+  ) %>% 
+  filter(yr >= 2017) %>%
+  ggplot(aes(x=mm, y=itemsSold,col=yr)) +
+  labs(tital="休閒運動商品銷售量")+
+  geom_line(size=1)
+#可以看出與營收圖形接近#可能影響購買慾因子：價格、運費多寡、產品評價
+#A.價格
+msprice=Monthly %>% 
+  mutate(
+    yr = format(month, "%Y"),
+    mm = as.integer(format(month, "%m"))
+  ) %>% 
+  filter(category %in% csp , yr >= 2017)%>%
+  ggplot(aes(x=mm, y=avgPrice, col=yr)) +
+  labs(tital="休閒運動商品價格變動圖")+
+  geom_line(size=1)
+#圖像顯示平均價格沒有特別的上漲或下跌，唯有銷售額頂峰的2018一月價格最高，然而二月平均價格驟降，故推論產品價格並不會過於影響購買慾
+#最高價差約140-100=40BRL(約300NTD)
+#B.運費
+msfreight=Monthly_freight_value %>% 
+  mutate(
+    yr = format(month, "%Y"),
+    mm = as.integer(format(month, "%m"))
+  ) %>% 
+  filter(category=="sports_leisure", yr >= 2017) %>%
+  ggplot(aes(x=mm, y=avgfreightvalue, col=yr)) +
+  geom_line(size=1) 
+#合併圖
+require(ggplot2)
+require(grid)
+grid.newpage() 
+pushViewport(viewport(layout = grid.layout(2,2)))
+vplayout <- function(x,y){viewport(layout.pos.row = x, layout.pos.col = y)} 
+print(msmoney, vp = vplayout(1,1))  
+print(msprice, vp = vplayout(1,2))            
+print(msamount , vp = vplayout(2,1)) 
+print(msfreight , vp = vplayout(2,2))
+```
+
+```{r}
+#運費占總價格的比
+Monthly_freight_value %>% 
+  mutate(
+    yr = format(month, "%Y"),
+    mm = as.integer(format(month, "%m"))
+  ) %>% 
+  filter(category=="sports_leisure", yr >= 2017) %>%
+  ggplot(aes(x=mm, y=avgfreightvalue/avgPrice, col=yr)) +
+  geom_line(size=1.5) 
+msmoney
+```
+<br>
+##### 第三名、bed_bath_table商品分析
+```{r}
+cbb=c('bed_bath_table')
+#期間總營收趨勢圖
+mbmoney=Monthly %>% 
+  mutate(
+    yr = format(month, "%Y"),
+    mm = as.integer(format(month, "%m"))
+  ) %>% 
+  filter(category %in% cbb, yr >= 2017) %>%
+  ggplot(aes(x=mm, y=totalRev,col=yr)) +
+  labs(tital="居家用品總營收趨勢圖")+
+  geom_line(size=1)
+
+AMOUNTMb=Monthly%>%filter(category=="bed_bath_table")
+mbamount=AMOUNTMb %>% 
+  mutate(
+    yr = format(month, "%Y"),
+    mm = as.integer(format(month, "%m"))
+  ) %>% 
+  filter(yr >= 2017) %>%
+  ggplot(aes(x=mm, y=itemsSold,col=yr)) +
+  labs(tital="居家用品商品銷售量")+
+  geom_line(size=1)
+#可以看出與營收圖形接近#可能影響購買慾因子：價格、運費多寡、產品評價
+#A.價格
+mbprice=Monthly %>% 
+  mutate(
+    yr = format(month, "%Y"),
+    mm = as.integer(format(month, "%m"))
+  ) %>% 
+  filter(category %in% cbb , yr >= 2017)%>%
+  ggplot(aes(x=mm, y=avgPrice, col=yr)) +
+  labs(tital="居家用品價格變動圖")+
+  geom_line(size=1)
+
+#B.運費
+mbfreight=Monthly_freight_value %>% 
+  mutate(
+    yr = format(month, "%Y"),
+    mm = as.integer(format(month, "%m"))
+  ) %>% 
+  filter(category=="bed_bath_table", yr >= 2017) %>%
+  ggplot(aes(x=mm, y=avgfreightvalue, col=yr)) +
+  geom_line(size=1)
+
+#合併圖
+require(ggplot2)
+require(grid)
+grid.newpage() 
+pushViewport(viewport(layout = grid.layout(2,2)))
+vplayout <- function(x,y){viewport(layout.pos.row = x, layout.pos.col = y)} 
+print(mbmoney, vp = vplayout(1,1))  
+print(mbprice, vp = vplayout(1,2))            
+print(mbamount , vp = vplayout(2,1)) 
+print(mbfreight , vp = vplayout(2,2))
+```
+<br>
+##### 第二名、說明watches_gifts手錶禮品逐月營收變化：
+```{r}
+#2017年手錶禮品類別的營收不斷攀升，11月此類別一樣受到巴西黑色星期五的影響而營收有大幅的上升，但過了11月後，一直到2018年的2月這段期間出現了首次營收負成長，接下來又再度攀升，直到2018年的5月到達了營收的最高峰，最後又再度呈現負成長。
+
+Monthly %>% 
+  mutate(
+    yr = format(month, "%Y"),
+    mm = as.integer(format(month, "%m"))
+  ) %>% 
+  filter(category == "watches_gifts", yr >= 2017) %>%
+  ggplot(aes(x=mm, y=totalRev, col=yr)) +
+  geom_line(size=2) + 
+  facet_wrap(~category, nrow=2) 
+```
+<br>
+分析手錶禮品逐月營收變化的原因：
+
+2. 賣出數量、價格與營收之關係
+   賣出數量與營收的圖幾乎吻合，而價格除了2017年年初以外，波動大致十分穩定，可見得找出影響賣出數量的因子即可說明營收的變化。
+```{r}
+cwg=c('watches_gifts')
+#手錶禮品總營收趨勢圖
+mwmoney=Monthly %>% 
+  mutate(
+    yr = format(month, "%Y"),
+    mm = as.integer(format(month, "%m"))
+  ) %>% 
+  filter(category %in% cwg, yr >= 2017) %>%
+  ggplot(aes(x=mm, y=totalRev,col=yr)) +
+  labs(tital="手錶禮品總營收趨勢圖")+
+  geom_line(size=1)
+
+#手錶禮品銷售量趨勢圖
+AMOUNTMw=Monthly%>%filter(category=="watches_gifts")
+mwamount=AMOUNTMw %>% 
+  mutate(
+    yr = format(month, "%Y"),
+    mm = as.integer(format(month, "%m"))
+  ) %>% 
+  filter(yr >= 2017) %>%
+  ggplot(aes(x=mm, y=itemsSold,col=yr)) +
+  labs(tital="精品手錶銷售量趨勢圖")+
+  geom_line(size=1)
+
+#手錶禮品平均價格趨勢圖
+mwprice=Monthly %>% 
+  mutate(
+    yr = format(month, "%Y"),
+    mm = as.integer(format(month, "%m"))
+  ) %>% 
+  filter(category %in% cwg , yr >= 2017)%>%
+  ggplot(aes(x=mm, y=avgPrice, col=yr)) +
+  labs(tital="手錶禮品平均價格趨勢圖")+
+  geom_line(size=1)
+
+#合併圖
+require(ggplot2)
+require(grid)
+grid.newpage() 
+pushViewport(viewport(layout = grid.layout(2,2)))
+vplayout <- function(x,y){viewport(layout.pos.row = x, layout.pos.col = y)} 
+print(mwmoney, vp = vplayout(1,1))  
+print(mwprice, vp = vplayout(2,2))            
+print(mwamount , vp = vplayout(2,1)) 
+```
+<br>
+3. 運費是否影響賣出數量
+   我們試圖探討運費與賣出數量之間的關係，看看是否運費的變化會影響，首先，從2018年初開始到約3月這段期間，運費從16塊上漲到20幾塊，而3月到5月又下降到低點14塊，然而，在這段期間賣出數量是增加的，顯示這段期間運費變化對賣出數量的影響應該是不確定的，不過在2018年5月後，運費再次上漲，此項類別的營收隨之下降。但我們難以解釋2018年初到3月這段期間運費上升且賣出數量也上升的現象，因此我們不將運費作為影響賣出數量的主要因子。
+```{r}
+cwg=c('watches_gifts')
+#手錶禮品銷售量趨勢圖
+AMOUNTMw=Monthly%>%filter(category=="watches_gifts")
+mwamount=AMOUNTMw %>% 
+  mutate(
+    yr = format(month, "%Y"),
+    mm = as.integer(format(month, "%m"))
+  ) %>% 
+  filter(yr >= 2017) %>%
+  ggplot(aes(x=mm, y=itemsSold,col=yr)) +
+  labs(tital="手錶禮品銷售量趨勢圖")+
+  geom_line(size=1)
+
+#手錶禮品運費趨勢圖
+mwfreight=Monthly_freight_value %>% 
+  mutate(
+    yr = format(month, "%Y"),
+    mm = as.integer(format(month, "%m"))
+  ) %>% 
+  filter(category=="watches_gifts", yr >= 2017) %>%
+  ggplot(aes(x=mm, y=avgfreightvalue, col=yr)) +
+  geom_line(size=1)
+
+#合併圖
+require(ggplot2)
+require(grid)
+grid.newpage() 
+pushViewport(viewport(layout = grid.layout(2,2)))
+vplayout <- function(x,y){viewport(layout.pos.row = x, layout.pos.col = y)} 
+print(mwamount, vp = vplayout(1,1))  
+print(mwfreight, vp = vplayout(1,2))            
+```
+<br>
+4. 接著我們從逐月的評分來觀察評分與賣出數量之間的關係，在2017年
+手錶禮品的評分普遍都在4分以上，我們認為這樣的評分表現都是屬於非常良好的，因此也明確反應在2017年11月以前整年賣出數量都是在成長的，而在11月後到2018年的2月這段期間，迎來了首次賣出數量下降，而評分此時也不斷下探到約3.5，在這段變化當中評分和賣出數量是有相關性的，而隨著評分回穩上升至4以上，賣出數量也在5月達到頂點，因此我們認為賣出數量的變化與評分的變化是存在相關性的，基本上若是評分下降，賣出數量則也會隨之下降，所以評分成為了影響手錶禮品營收的間接因子，評分影響賣出數量，再影響營收。在了解評分的好壞會影響手錶禮品的營收後，我們開始往下探索哪些因子會影響到手錶禮品的評分。
+```{r}
+cwg=c('watches_gifts')
+#手錶禮品銷售量趨勢圖
+AMOUNTMw=Monthly%>%filter(category=="watches_gifts")
+mwamount=AMOUNTMw %>% 
+  mutate(
+    yr = format(month, "%Y"),
+    mm = as.integer(format(month, "%m"))
+  ) %>% 
+  filter(yr >= 2017) %>%
+  ggplot(aes(x=mm, y=itemsSold,col=yr)) +
+  labs(tital="手錶禮品銷售量趨勢圖")+
+  geom_line(size=1)
+
+#手錶禮品評分趨勢圖
+mwscore=Monthly_with_score %>% 
+  mutate(
+    yr = format(month, "%Y"),
+    mm = as.integer(format(month, "%m"))
+  ) %>% 
+  filter(category=="watches_gifts", yr >= 2017) %>%
+  ggplot(aes(x=mm, y=avgscore, col=yr)) +
+  geom_line(size=1)
+
+#合併圖
+require(ggplot2)
+require(grid)
+grid.newpage() 
+pushViewport(viewport(layout = grid.layout(2,2)))
+vplayout <- function(x,y){viewport(layout.pos.row = x, layout.pos.col = y)} 
+print(mwamount, vp = vplayout(1,1))  
+print(mwscore, vp = vplayout(1,2))            
+```
+<br>
+5. 我們試著從產品描述的長度來切入，觀察是否會與評分有關連性，我們將產品描述長度切成三個段落，分別是小於500字、500到1000字以及1000字以上，但發現三個區間每個評分的比例是差不多的，顯示產品的描述長短與評分之間並無關連。
+```{r}
+I_P = left_join(I[, c(1,3,8)], P[,1:10])
+product_details_review = left_join(I_P[,1:10], R[, c(2,3)])
+wg_details_review = product_details_review %>% 
+  filter(category == "watches_gifts")
+
+wg_details_review$less=ifelse(wg_details_review$product_description_lenght<500,"less",ifelse(wg_details_review$product_description_lenght<1000, "greater","greatest"))
+table(wg_details_review$less,wg_details_review$review_score) %>% prop.table(margin = 1) %>% round(2)
+```
+<br>
+6. 我們接著再從產品照片的數量來切入，觀察產品照片的數量與評分是否有關連性，但經由table後顯示，產品照片數量和評分高低並沒有顯著的相關性，我們原先預期產品照片數量越多，評分越高這樣的假設並不成立。
+```{r}
+table(wg_details_review$product_photos_qty, wg_details_review$review_score) %>% 
+  prop.table(margin = 1) %>%
+  round(2)
+```
+<br>
+7. 我們再從運送時間來觀察，看看運費時間的長短是否會影響評分的高低，我們將產品送達消費者時間和交易時間先轉換成秒數，再相減得出消費者從下訂單到收到產品的秒數長短，接著將時間分成三個級距來看評分高低，我們發現運送時間最長的級距得到5分評價的機率只有0.38，是最低的，且得到1分評價的機率是0.24，是最高的，而運送時間次高和最低的級距得到5分評價的機率分別為0.59和0.63，也就是說隨著運送時間越短，消費者給產品5分的機率是越來越高的，由此可推論運送時間長短與評分高低是有負相關的關聯性，當運送時間越長，評分越低的機率越高，反之當運送時間越短，評分越高的機率越高，因此我們認為Olist應該試圖改善物流來試著提高此類商品的評價，讓手錶禮品賣得更多，而能夠進一步提升此類商品的營收。
+```{r}
+odcd_second = unclass(O$order_delivered_customer_date)
+opt_second = unclass(O$order_purchase_timestamp)
+deliver_time = odcd_second - opt_second
+O_with_second = cbind(O, deliver_time)
+deliver_time_score = left_join(O_with_second[, c(1,9)], I_with_score[, 1:9])
+wg_deliver_time_score = deliver_time_score %>% filter(category == "watches_gifts")
+
+wg_deliver_time_score$less=ifelse(wg_deliver_time_score$deliver_time<1000000,"less",ifelse(wg_deliver_time_score$deliver_time<1500000, "greater","greatest"))
+table(wg_deliver_time_score$less,wg_deliver_time_score$review_score) %>% prop.table(margin = 1) %>% round(2)
+```
+##### 第一名：health_beauty健康保健商品分析
+```{r}
+#總收益
+cx = c('health_beauty')
+Monthly %>% 
+  mutate(
+    yr = format(month, "%Y"),
+    mm = as.integer(format(month, "%m"))
+  ) %>% 
+  filter(category %in% cx, yr >= 2017) %>%
+  ggplot(aes(x=mm, y=totalRev, col=yr)) +
+  geom_line(size=2) + 
+  facet_wrap(~category, nrow=2)
+```
+
+```{r}
+#總銷量
+cf = c('health_beauty')
+Monthly %>% 
+   mutate(
+     yr = format(month, "%Y"),
+     mm = as.integer(format(month, "%m"))
+   ) %>% 
+   filter(category %in% cx, yr >= 2017) %>%
+   ggplot(aes(x=mm, y=itemsSold, col=yr)) +
+   geom_line(size=2) + 
+   facet_wrap(~category, nrow=2 )
+```
+
+```{r}
+#平均價格
+cf = c('health_beauty')
+Monthly %>% 
+   mutate(
+     yr = format(month, "%Y"),
+     mm = as.integer(format(month, "%m"))
+   ) %>% 
+   filter(category %in% cx, yr >= 2017) %>%
+   ggplot(aes(x=mm, y=avgPrice, col=yr)) +
+   geom_line(size=2) + 
+   facet_wrap(~category, nrow=2 )
+```
+
+```{r}
+#平均運費
+chb=c('health_beauty')
+Monthly_freight_value %>% 
+  mutate(
+    yr = format(month, "%Y"),
+    mm = as.integer(format(month, "%m"))
+  ) %>% 
+  filter(category %in% cx, yr >= 2017) %>%
+  ggplot(aes(x=mm, y=avgfreightvalue, col=yr)) +
+  geom_line(size=2) + 
+  facet_wrap(~category, nrow=2)
+```
+
+
+##### Step5：總營銷建議
